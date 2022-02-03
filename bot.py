@@ -1,77 +1,114 @@
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-from telegram import ReplyKeyboardMarkup, KeyboardButton, Emoji
-import logging
-import sqlite3
+from telegram import ReplyKeyboardMarkup, Emoji
 from importlib import reload
-import math
-import sys
 from pony import orm
+import logging, math, sys
+
 reload(sys)
+
+
 # ORM
-##################
 db = orm.Database()
+
+
 class Db_Sheet1(db.Entity):
     Quote_ID = orm.PrimaryKey(int, auto=True)
     Name = orm.Required(str)
     Quote_Category = orm.Required(str)
     Quote = orm.Required(str)
-db.bind(provider='sqlite', filename='D:/Dmitry/Desktop/bot_philosopher/DB.sqlite', create_db = True)
+
+
+# Подключение к базе
+db.bind(
+    provider="sqlite",
+    filename="/Users/fomindmitry/Documents/GitHub/bot_philosopher/DB.sqlite",
+    create_db=True,
+)
 db.generate_mapping()
-###############################
+
 # Enable logging
 logging.basicConfig(
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.INFO)
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 logger = logging.getLogger(__name__)
-
-# Подключимся к базе данных - это уже не нужно
-conn = sqlite3.connect('DB.sqlite', check_same_thread=False)
-c = conn.cursor()
 
 
 # Функция, которая возвращает создает кнопки категорий на экране
 def category_names():
-    conn.row_factory = lambda cursor, row: row[0]
-    c = conn.cursor()
     # Выбираем все категории, которые у нас есть
     with orm.db_session:
-        category_names = Db_Sheet1.select_by_sql('SELECT Quote_Category,Quote_ID FROM db_Sheet1;')
-        custom_keyboard = list(set([category_names[:][i].Quote_Category for i in range(len(category_names[:]))]))
+        category_names = Db_Sheet1.select_by_sql(
+            "SELECT Quote_Category, Quote_ID FROM db_Sheet1;"
+        )
+        custom_keyboard = list(
+            set(
+                [
+                    category_names[:][i].Quote_Category
+                    for i in range(len(category_names[:]))
+                ]
+            )
+        )
     # Создаем переменную с уникальными категориями
-    custom_keyboard = [custom_keyboard[2*i : 2*(i+1)] for i in range(int(math.ceil(len(category_names[:])/2)))]
+    custom_keyboard = [
+        custom_keyboard[2 * i : 2 * (i + 1)]
+        for i in range(int(math.ceil(len(category_names[:]) / 2)))
+    ]
     reply_markup = ReplyKeyboardMarkup(custom_keyboard)
-
     return reply_markup
 
 
 # Функция, которая создает кнопки авторов на экране
 def author_names():
-    conn.row_factory = lambda cursor, row: row[0]
     with orm.db_session:
-        author_names = Db_Sheet1.select_by_sql('SELECT Name, Quote_ID FROM db_Sheet1;')
-        custom_keyboard = list(set([author_names[:][i].Name for i in range(len(author_names[:]))]))
+        author_names = Db_Sheet1.select_by_sql("SELECT Name, Quote_ID FROM db_Sheet1;")
+        custom_keyboard = list(
+            set([author_names[:][i].Name for i in range(len(author_names[:]))])
+        )
     # Создаем переменную с уникальными именами
-    custom_keyboard = [custom_keyboard[2*i : 2*(i+1)] for i in range(int(math.ceil(len(author_names[:])/2)))]
+    custom_keyboard = [
+        custom_keyboard[2 * i : 2 * (i + 1)]
+        for i in range(int(math.ceil(len(author_names[:]) / 2)))
+    ]
     reply_markup = ReplyKeyboardMarkup(custom_keyboard)
     return reply_markup
-
-
-# Берем из базы случайную реплику и возвращаем ее пользователю
-def get_random_quote():
-    with orm.db_session:
-        quote = Db_Sheet1.select_by_sql('SELECT Quote, Name, Quote_ID FROM db_Sheet1 ORDER BY RANDOM() LIMIT 1;')[0]
-    return quote.Quote + " ~ " + quote.Name + "\n" + Emoji.THOUGHT_BALLOON
 
 
 # Возвращаем реплику исходя из того, что нажали на экране
 def get_quote_by_category(index, args):
     with orm.db_session:
-        try: 
-            quote = Db_Sheet1.select_by_sql('SELECT Quote, Quote_Category, Name,Quote_ID FROM db_Sheet1 WHERE Name = "' + args + '" ORDER BY RANDOM() LIMIT 1;')[0]
-            return Emoji.THOUGHT_BALLOON + "\n" + quote.Quote + " ~ " + quote.Name
-        except:
-            quote = Db_Sheet1.select_by_sql('SELECT Quote, Quote_Category, Name, Quote_ID FROM db_Sheet1 WHERE Quote_Category = "' + args + '" ORDER BY RANDOM() LIMIT 1;')[0]
-            return quote.Quote + " ~ " + quote.Name + "\n" + Emoji.THOUGHT_BALLOON
+        category_list = Db_Sheet1.select_by_sql(
+            "SELECT Quote_Category,Quote_ID FROM db_Sheet1;"
+        )
+        category = list(
+            set(
+                [
+                    category_list[:][i].Quote_Category
+                    for i in range(len(category_list[:]))
+                ]
+            )
+        )
+        if args in category:
+            quote = Db_Sheet1.select_by_sql(
+                f"""SELECT Quote,
+                           Quote_Category, Name,
+                           Quote_ID FROM db_Sheet1 WHERE Quote_Category = "{args}" ORDER BY RANDOM() LIMIT 1;"""
+            )[0]
+        else:
+            quote = Db_Sheet1.select_by_sql(
+                f"""SELECT Quote,
+                         Quote_Category,
+                         Name,Quote_ID FROM db_Sheet1 WHERE Name = "{args}" ORDER BY RANDOM() LIMIT 1;"""
+            )[0]
+        return f"{quote.Quote} ~ {quote.Name} \n {Emoji.THOUGHT_BALLOON}"
+
+
+# Берем из базы случайную реплику и возвращаем ее пользователю
+def get_random_quote():
+    with orm.db_session:
+        quote = Db_Sheet1.select_by_sql(
+            "SELECT Quote, Name, Quote_ID FROM db_Sheet1 ORDER BY RANDOM() LIMIT 1;"
+        )[0]
+    return f"{quote.Quote} ~ {quote.Name} \n {Emoji.THOUGHT_BALLOON}"
 
 
 # Что пишем при старте
@@ -88,38 +125,51 @@ def start(bot, update):
 
 # Вызвать категории
 def category(bot, update):
-    bot.sendMessage(chat_id=update.message.chat_id, text="Хмм..какая именно категория тебя интересует?",
-            reply_markup=category_names())
+    bot.sendMessage(
+        chat_id=update.message.chat_id,
+        text="Хмм..какая именно категория тебя интересует?",
+        reply_markup=category_names(),
+    )
 
 
 # Вызвать авторов
 def author(bot, update):
-    bot.sendMessage(chat_id=update.message.chat_id, text="Хмм..и кто же именно тебе нужен?",
-            reply_markup=author_names())
+    bot.sendMessage(
+        chat_id=update.message.chat_id,
+        text="Хмм..и кто же именно тебе нужен?",
+        reply_markup=author_names(),
+    )
 
 
 # Рандомная цитата
 def random(bot, update):
-    bot.sendMessage(chat_id=update.message.chat_id, text = get_random_quote())
+    bot.sendMessage(chat_id=update.message.chat_id, text=get_random_quote())
 
 
 # Информация о боте
 def about(bot, update):
-    bot.sendMessage(update.message.chat_id, text="Цель моей жизни - сдать экзамен Хозяину")
+    bot.sendMessage(
+        update.message.chat_id, text="Цель моей жизни - сдать экзамен Хозяину"
+    )
 
 
 # Вызвать помощь
 def help(bot, update):
-    bot.sendMessage(update.message.chat_id, text=f"""Знания - это сила {Emoji.THOUGHT_BALLOON}
+    bot.sendMessage(
+        update.message.chat_id,
+        text=f"""Знания - это сила {Emoji.THOUGHT_BALLOON}
 /category - Выбрать цитату по категории
 /author - Выбрать цитату по автору
 /random - Выбрать случайную цитату
-/about - Расскажет о смысле существования бота""")
+/about - Расскажет о смысле существования бота""",
+    )
 
 
 # Вернуть ответ при нажатии на клавишу
 def user_reply(bot, update):
-    bot.sendMessage(update.message.chat_id, text=get_quote_by_category(0, update.message.text))
+    bot.sendMessage(
+        update.message.chat_id, text=get_quote_by_category(0, update.message.text)
+    )
 
 
 def echo(bot, update):
@@ -131,7 +181,7 @@ def error(bot, update, error):
 
 
 # The EventHandler
-updater = Updater('5107716470:AAHDiqCGYzMFsN423isheUE2px8pTGiK7ZU')
+updater = Updater("5107716470:AAHDiqCGYzMFsN423isheUE2px8pTGiK7ZU")
 
 # Get the dispatcher to register handlers
 dp = updater.dispatcher
@@ -154,3 +204,4 @@ dp.add_error_handler(error)
 updater.start_polling()
 
 updater.idle()
+
